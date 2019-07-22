@@ -364,10 +364,19 @@ class MiniCssExtractPlugin {
               }
             );
 
+            const supportsPreload = `(function() {
+              try {
+                return document.createElement("link").relList.supports("preload");
+              } catch(e) {
+                return false;
+              }
+            }());`;
+
             return Template.asString([
               source,
               '',
               `// ${pluginName} CSS loading`,
+              `var supportsPreload = ${supportsPreload}`
               `var cssChunks = ${JSON.stringify(chunkMap)};`,
               'if(installedCssChunks[chunkId]) promises.push(installedCssChunks[chunkId]);',
               'else if(installedCssChunks[chunkId] !== 0 && cssChunks[chunkId]) {',
@@ -388,13 +397,15 @@ class MiniCssExtractPlugin {
                   'for(var i = 0; i < existingStyleTags.length; i++) {',
                   Template.indent([
                     'var tag = existingStyleTags[i];',
+                    'if((tag.rel === "stylesheet" || tag.rel === "preload") && (dataHref === href || dataHref === fullhref)) return resolve();',
                     'var dataHref = tag.getAttribute("data-href");',
                     'if(dataHref === href || dataHref === fullhref) return resolve();',
                   ]),
                   '}',
                   'var linkTag = document.createElement("link");',
-                  'linkTag.rel = "stylesheet";',
+                  'linkTag.rel = supportsPreload ? "preload": "stylesheet";',
                   'linkTag.type = "text/css";',
+                  'supportsPreload ? linkTag.as = "style" : linkTag.type = "text/css";',
                   'linkTag.onload = resolve;',
                   'linkTag.onerror = function(event) {',
                   Template.indent([
@@ -423,7 +434,20 @@ class MiniCssExtractPlugin {
                   'head.appendChild(linkTag);',
                 ]),
                 '}).then(function() {',
-                Template.indent(['installedCssChunks[chunkId] = 0;']),
+                Template.indent([
+                  'installedCssChunks[chunkId] = 0;',
+                  'if(supportsPreload) {',
+                  Template.indent([
+                    'var execLinkTag = document.createElement("link");',
+                    `execLinkTag.href =  ${
+                      mainTemplate.requireFn
+                    }.p + ${linkHrefPath};`,
+                    'execLinkTag.rel = "stylesheet";',
+                    'execLinkTag.type = "text/css";',
+                    'document.body.appendChild(execLinkTag);',
+                  ]),
+                  '}',
+                ]),
                 '}));',
               ]),
               '}',
